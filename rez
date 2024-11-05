@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Koltuk Düzeni Yönetimi - Yönetici</title>
+    <style>
+        /* Stil ayarları */
+        body { font-family: Arial, sans-serif; background-color: #f9f9f9; margin: 0; padding: 0; }
+        .container { max-width: 800px; margin: auto; padding: 20px; background: white; border: 1px solid #ccc; border-radius: 5px; box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1); }
+        h1, h2 { text-align: center; }
+        .row-input, .booking-form { display: flex; align-items: center; margin-bottom: 10px; }
+        .row-input input, .booking-form input { width: 100px; margin-right: 10px; padding: 5px; border: 1px solid #ccc; border-radius: 3px; }
+        .seating-display { display: flex; flex-direction: column; margin-top: 20px; }
+        .seat-row { display: flex; justify-content: center; margin-bottom: 10px; }
+        .seat { width: 40px; height: 40px; background-color: #ccc; text-align: center; line-height: 40px; border-radius: 5px; margin: 0 5px; cursor: pointer; transition: background-color 0.3s; }
+        .seat.taken { background-color: #dc3545; cursor: not-allowed; }
+        .seat.selected { background-color: #28a745; }
+        .gap { width: 50px; }
+        .side { display: flex; justify-content: center; align-items: center; flex: 1; }
+        #soldSeatsContainer { margin-top: 20px; }
+        .booking-info { margin-bottom: 10px; }
+        .cancel-btn, .edit-btn { color: #dc3545; cursor: pointer; margin-left: 10px; }
+        .edit-btn { color: #007bff; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Koltuk Düzeni Yönetimi</h1>
+    <div id="rowInputContainer">
+        <h2>Sıra ve Koltuk Sayısını Belirle</h2>
+        <div id="rows"></div>
+        <button id="addRow">Sıra Ekle</button>
+        <button id="generateSeating">Koltuk Düzenini Oluştur</button>
+    </div>
+
+    <div class="seating-chart hidden">
+        <h2>Sandalye Düzeni</h2>
+        <div id="seatingDisplay" class="seating-display"></div>
+    </div>
+
+    <div class="booking-form">
+        <h2>Rezervasyon Yap</h2>
+        <input type="text" id="adminName" placeholder="Ad Soyad" required>
+        <input type="text" id="adminPhone" placeholder="Telefon" required>
+        <button id="reserveSeats">Koltukları Rezerve Et</button>
+    </div>
+
+    <h2>Rezerve Edilen Koltuklar</h2>
+    <div id="soldSeatsContainer" class="hidden"></div>
+    <button id="showUserInterface">Kullanıcı Arayüzüne Git</button>
+</div>
+
+<script>
+let seatsStatus = {};
+let selectedSeats = new Set();
+let soldSeats = [];
+
+// Sayfa yüklendiğinde verileri yükle
+function loadData() {
+    loadRows();
+    loadSoldSeats();
+}
+
+// Satırları yükle ve görüntüle
+function loadRows() {
+    const rows = JSON.parse(localStorage.getItem('rows')) || [];
+    const rowsContainer = document.getElementById('rows');
+    rowsContainer.innerHTML = '';
+
+    rows.forEach(row => {
+        const rowDiv = document.createElement('div');
+        rowDiv.classList.add('row-input');
+        rowDiv.innerHTML = `
+            <input type="text" value="${row.name}" required placeholder="Sıra (A, B, C...)">
+            <input type="number" value="${row.leftCount}" min="1" required placeholder="Sol Koltuk Sayısı">
+            <input type="number" value="${row.rightCount}" min="1" required placeholder="Sağ Koltuk Sayısı">
+            <button class="removeRow">Sil</button>
+        `;
+        rowsContainer.appendChild(rowDiv);
+
+        rowDiv.querySelector('.removeRow').addEventListener('click', function() {
+            const updatedRows = rows.filter(r => r.name !== row.name);
+            localStorage.setItem('rows', JSON.stringify(updatedRows));
+            loadRows();
+        });
+    });
+}
+
+// Sıra ekleme işlevi
+document.getElementById('addRow').addEventListener('click', function() {
+    const rowDiv = document.createElement('div');
+    rowDiv.classList.add('row-input');
+    rowDiv.innerHTML = `
+        <input type="text" placeholder="Sıra (A, B, C...)" required>
+        <input type="number" placeholder="Sol Koltuk Sayısı" min="1" required>
+        <input type="number" placeholder="Sağ Koltuk Sayısı" min="1" required>
+        <button class="removeRow">Sil</button>
+    `;
+    document.getElementById('rows').appendChild(rowDiv);
+
+    rowDiv.querySelector('.removeRow').addEventListener('click', function() {
+        rowDiv.remove();
+        saveRows();
+    });
+});
+
+// Koltuk düzenini oluşturma işlevi
+document.getElementById('generateSeating').addEventListener('click', function() {
+    document.getElementById('seatingDisplay').innerHTML = ''; 
+    const rows = JSON.parse(localStorage.getItem('rows')) || [];
+    
+    rows.forEach(row => {
+        const seatRow = document.createElement('div');
+        seatRow.classList.add('seat-row');
+
+        const leftSide = document.createElement('div');
+        leftSide.classList.add('side');
+        for (let i = 1; i <= row.leftCount; i++) {
+            const seat = createSeat(`${row.name}${i}`);
+            leftSide.appendChild(seat);
+        }
+
+        const gap = document.createElement('div');
+        gap.classList.add('gap');
+
+        const rightSide = document.createElement('div');
+        rightSide.classList.add('side');
+        for (let i = 1; i <= row.rightCount; i++) {
+            const seat = createSeat(`${row.name}${row.leftCount + i}`);
+            rightSide.appendChild(seat);
+        }
+
+        seatRow.appendChild(leftSide);
+        seatRow.appendChild(gap);
+        seatRow.appendChild(rightSide);
+        document.getElementById('seatingDisplay').appendChild(seatRow);
+    });
+
+    document.querySelector('.seating-chart').classList.remove('hidden');
+});
+
+// Koltuk oluşturma işlevi
+function createSeat(seatId) {
+    const seat = document.createElement('div');
+    seat.classList.add('seat');
+    seat.innerText = seatId; 
+    seatsStatus[seatId] = false;
+
+    if (isSeatTaken(seatId)) {
+        seat.classList.add('taken');
+    }
+
+    seat.addEventListener('click', () => toggleSeatSelection(seat));
+    return seat;
+}
+
+// Koltuk seçimini yönet
+function toggleSeatSelection(seat) {
+    if (seat.classList.contains('taken')) return; 
+    seat.classList.toggle('selected');
+    const seatId = seat.innerText;
+
+    if (selectedSeats.has(seatId)) {
+        selectedSeats.delete(seatId);
+    } else {
+        selectedSeats.add(seatId);
+    }
+}
+
+// Koltukları rezerve etme işlevi
+document.getElementById('reserveSeats').addEventListener('click', function() {
+    if (selectedSeats.size === 0) {
+        alert('Lütfen en az bir koltuk seçiniz!');
+        return;
+    }
+
+    const adminName = document.getElementById('adminName').value.trim();
+    const adminPhone = document.getElementById('adminPhone').value.trim();
+
+    // İsim ve telefon alanları boşsa uyarı ver ve rezervasyonu engelle
+    if (!adminName || !adminPhone) {
+        alert('Lütfen ad ve telefon bilgilerini giriniz!');
+        return;
+    }
+
+    // Seçilen koltukları rezerve et
+    selectedSeats.forEach(seatId => {
+        soldSeats.push({ seatId, adminName, adminPhone });
+        const seatElement = Array.from(document.getElementsByClassName('seat')).find(seat => seat.innerText === seatId);
+        seatElement.classList.add('taken');
+    });
+
+    updateSoldSeats();
+    saveSoldSeats();
+    clearSelections();
+});
+
+// Rezerve edilen koltukları güncelle
+function updateSoldSeats() {
+    const groupedSeats = soldSeats.reduce((acc, { seatId, adminName, adminPhone }) => {
+        const key = `${adminName} (${adminPhone})`;
+        if (!acc[key]) {
+            acc[key] = [];
+        }
+        acc[key].push(seatId);
+        return acc;
+    }, {});
+
+    const soldSeatsContainer = document.getElementById('soldSeatsContainer');
+    soldSeatsContainer.innerHTML = ''; 
+
+    for (const [key, seats] of Object.entries(groupedSeats)) {
+        const bookingInfo = document.createElement('div');
+        bookingInfo.classList.add('booking-info');
+        bookingInfo.innerText = `${key}: ${seats.join(', ')}`;
+        
+        const cancelBtn = document.createElement('span');
+        cancelBtn.innerText = 'İptal';
+        cancelBtn.classList.add('cancel-btn');
+        cancelBtn.addEventListener('click', () => cancelReservation(key));
+        
+        const editBtn = document.createElement('span');
+        editBtn.innerText = 'Düzenle';
+        editBtn.classList.add('edit-btn');
+        editBtn.addEventListener('click', () => editReservation(key));
+        
+        bookingInfo.appendChild(cancelBtn);
+        bookingInfo.appendChild(editBtn);
+        soldSeatsContainer.appendChild(bookingInfo);
+    }
+
+    if (soldSeats.length > 0) {
+        soldSeatsContainer.classList.remove('hidden');
+    } else {
+        soldSeatsContainer.classList.add('hidden');
+    }
+}
+
+// Rezervasyonu iptal etme işlevi
+function cancelReservation(key) {
+    const booking = soldSeats.find(({ adminName, adminPhone }) => `${adminName} (${adminPhone})` === key);
+    
+    if (booking) {
+        soldSeats = soldSeats.filter(seat => seat.adminName !== booking.adminName || seat.adminPhone !== booking.adminPhone);
+        const seatElements = document.querySelectorAll('.seat');
+        seatElements.forEach(seat => {
+            if (booking.seatId === seat.innerText) {
+                seat.classList.remove('taken');
+            }
+        });
+
+        updateSoldSeats();
+        saveSoldSeats();
+    }
+}
+
+// Rezervasyonu düzenleme işlevi
+function editReservation(key) {
+    const booking = soldSeats.find(({ adminName, adminPhone }) => `${adminName} (${adminPhone})` === key);
+    
+    if (booking) {
+        const newName = prompt('Yeni Ad Soyad giriniz:', booking.adminName);
+        const newPhone = prompt('Yeni Telefon numarası giriniz:', booking.adminPhone);
+        
+        if (newName && newPhone) {
+            booking.adminName = newName;
+            booking.adminPhone = newPhone;
+            updateSoldSeats();
+            saveSoldSeats();
+        }
+    }
+}
+
+// Verileri kaydet
+function saveRows() {
+    const rows = [];
+    document.querySelectorAll('.row-input').forEach(row => {
+        const name = row.querySelector('input[type=text]').value;
+        const leftCount = row.querySelector('input[type=number]').value;
+        const rightCount = row.querySelector('input[type=number]').value;
+        rows.push({ name, leftCount, rightCount });
+    });
+    localStorage.setItem('rows', JSON.stringify(rows));
+}
+
+// Rezerve edilen koltukları kaydet
+function saveSoldSeats() {
+    localStorage.setItem('soldSeats', JSON.stringify(soldSeats));
+}
+
+// Rezerve edilen koltukları yükle
+function loadSoldSeats() {
+    const data = JSON.parse(localStorage.getItem('soldSeats'));
+    if (data) {
+        soldSeats = data;
+        updateSoldSeats();
+    }
+}
+
+// Koltuk durumunu kontrol etme
+function isSeatTaken(seatId) {
+    return soldSeats.some(seat => seat.seatId === seatId);
+}
+
+// Seçimleri temizle
+function clearSelections() {
+    selectedSeats.clear();
+    const seatElements = document.querySelectorAll('.seat');
+    seatElements.forEach(seat => {
+        seat.classList.remove('selected');
+    });
+}
+
+// Sayfa yüklendiğinde verileri yükle
+loadData();
+
+// Kullanıcı arayüzüne gitme
+document.getElementById('showUserInterface').addEventListener('click', function() {
+    window.open('user.html', '_blank'); // Yeni sekmede kullanıcı arayüzü açılır
+});
+</script>
+</body>
+</html>
